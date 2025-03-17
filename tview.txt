@@ -1,0 +1,28 @@
+/*
+		menu := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorWhite).SetTitle("Menu")
+		cryptoMarket := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorGreen.TrueColor()).SetTitle("Cyrpto Market")
+		crypto := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorDarkRed.TrueColor()).SetTitle("Crypto")
+		box := tview.NewTextView().SetText("Terminal").SetBorder(true)
+
+		// Menu stuff
+		currencyName := tview.NewInputField().SetLabel("Enter Name or Ticker: ")
+
+		form := tview.NewForm().
+			AddFormItem(currencyName).
+			AddButton("Find Crypto", nil)
+
+		horizontalFlex := tview.NewFlex().
+			AddItem(menu, 0, 1, false).
+			AddItem(form, 0, 1, false).
+			AddItem(cryptoMarket, 0, 1, false).
+			AddItem(crypto, 0, 1, false)
+
+		verticalFlex := tview.NewFlex().
+			SetDirection(tview.FlexRow).
+			AddItem(box, 3, 0, false).
+			AddItem(horizontalFlex, 0, 1, true)
+
+		if err := tview.NewApplication().SetRoot(verticalFlex, true).Run(); err != nil {
+			panic(err)
+		}
+	*/
