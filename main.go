@@ -5,89 +5,124 @@ import (
 	//"github.com/rivo/tview"
 	//"github.com/go-git/go-git/v5"
 	"fmt"
-	"log"
-	"net/http"
+	"io"
 
-	"github.com/gorilla/websocket"
+	"net/http"
+	"strconv"
+	"time"
+
+	"golang.org/x/net/websocket"
 )
 
 // Work on menu
-// Make an app that gets the user requested golang github package form github
+// Make an app that gets the user requested golang github package from github
 // and downloads and imports it automatically
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+type Server struct {
+	conns map[*websocket.Conn]bool
 }
 
-// Create the connection handler that upgrades to websocket
-// for constant real-time updating
-func handleConnections(w http.ResponseWriter, r *http.Request) {
-	//Upgrade initial GET request to websocket
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Fatal(err)
+func NewServer() *Server {
+	return &Server{
+		conns: make(map[*websocket.Conn]bool),
 	}
-	defer ws.Close()
+}
+
+// Example of user signing up for orderbooks
+// to recieve real-time live data
+func (s *Server) handleWSOrderbook(ws *websocket.Conn) {
+	fmt.Println("new incoming connection from client to orderbook feed:", ws.RemoteAddr())
 
 	for {
-		messageType, p, err := ws.ReadMessage()
+		payload := fmt.Sprintf("orderbook data -> %d\n", time.Now().UnixNano())
+		ws.Write([]byte(payload))
+		fmt.Println(payload)
+		time.Sleep(time.Second * 2)
+	}
+}
+
+func (s *Server) handleWS(ws *websocket.Conn) {
+	fmt.Printf("new incoming connection from client: %s", ws.RemoteAddr())
+
+	s.conns[ws] = true
+
+	s.readLoop(ws)
+}
+
+func (s *Server) realUpdate(ws *websocket.Conn) {
+	var sum int
+	for {
+		fmt.Printf("money: %d", sum)
+		s := strconv.Itoa(sum)
+		ws.Write([]byte(s))
+		sum += 2
+		time.Sleep(time.Second * 2)
+	}
+}
+
+func (s *Server) readLoop(ws *websocket.Conn) {
+	// A buffer in temporary storage to transfer data
+	// In this case a sequence of bytes or a string
+	buf := make([]byte, 1024)
+	for {
+		// Read the length of the buffer
+		n, err := ws.Read(buf)
 		if err != nil {
-			log.Println(err)
-			return
+			if err == io.EOF {
+				break
+			}
+			fmt.Println("read error:", err)
+			continue
 		}
-		fmt.Printf("Message was recieved: %s\n", p)
+		// Store bytes up to the length (Now whole buffer)
+		msg := buf[:n]
 
-		if err := ws.WriteMessage(messageType, p); err != nil {
-			log.Println(p)
-			return
-		}
-
+		// Displays message to everyone connected
+		// to Websocket connection endpoint
+		s.broadcast(msg)
 	}
 
 }
 
-func setupRoutes() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Server is up!!")
-	})
+// Wrapper function which disables Origin header checking
+// This means that soemthing like Postman will work
+// Without Golang restricting certain URL's
+// such as ours, http://localhost:3000
+func createWebsocketServer(handler websocket.Handler) websocket.Server {
+	return websocket.Server{
+		Handshake: func(c *websocket.Config, req *http.Request) error {
+			return nil
+		},
 
-	http.HandleFunc("/ws", handleConnections)
+		Handler: handler,
+	}
+}
+
+// Main websocket part
+// We essentially iterate through every
+// websocket connection and display the message
+// sent by the current connection to every other connection
+// This is how real-time chat messaging works
+func (s *Server) broadcast(b []byte) {
+	for ws := range s.conns {
+		// Go routine func ensures a client does not
+		// have to wait long to recieve message
+		//  because of other clients delay
+		go func(ws *websocket.Conn) {
+			if _, err := ws.Write(b); err != nil {
+				fmt.Println("Write error:", err)
+			}
+		}(ws)
+	}
 }
 
 func main() {
 
-	setupRoutes()
-	log.Fatal(http.ListenAndServe(":8080", nil))
-
-	/*
-		menu := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorWhite).SetTitle("Menu")
-		cryptoMarket := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorGreen.TrueColor()).SetTitle("Cyrpto Market")
-		crypto := tview.NewBox().SetBorder(true).SetBorderColor(tcell.ColorDarkRed.TrueColor()).SetTitle("Crypto")
-		box := tview.NewTextView().SetText("Terminal").SetBorder(true)
-
-		// Menu stuff
-		currencyName := tview.NewInputField().SetLabel("Enter Name or Ticker: ")
-
-		form := tview.NewForm().
-			AddFormItem(currencyName).
-			AddButton("Find Crypto", nil)
-
-		horizontalFlex := tview.NewFlex().
-			AddItem(menu, 0, 1, false).
-			AddItem(form, 0, 1, false).
-			AddItem(cryptoMarket, 0, 1, false).
-			AddItem(crypto, 0, 1, false)
-
-		verticalFlex := tview.NewFlex().
-			SetDirection(tview.FlexRow).
-			AddItem(box, 3, 0, false).
-			AddItem(horizontalFlex, 0, 1, true)
-
-		if err := tview.NewApplication().SetRoot(verticalFlex, true).Run(); err != nil {
-			panic(err)
-		}
-	*/
+	// Start server and handle at /ws endpoint
+	server := NewServer()
+	http.Handle("/ws", createWebsocketServer(websocket.Handler(server.handleWS)))
+	http.Handle("/orderbookfeed", createWebsocketServer(websocket.Handler(server.handleWSOrderbook)))
+	http.Handle("/updates", createWebsocketServer(websocket.Handler(server.realUpdate)))
+	http.ListenAndServe(":3000", nil)
 
 }
